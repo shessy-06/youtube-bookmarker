@@ -4,7 +4,7 @@ import "./Home.css";
 
 // 1. MOVE CONSTANTS OUTSIDE THE COMPONENT
 // This stops React's linter from getting confused and asking for them in dependency arrays.
-const API_URL = "http://127.0.0.1:8000/api";
+const API_URL = "https://youtube-bookmarker-backend.onrender.com/api";
 const API_KEY = "AIzaSyAjcz_-ApKM7UoRE2-6SRaxkPXYMcK9S6I";
 
 function Home() {
