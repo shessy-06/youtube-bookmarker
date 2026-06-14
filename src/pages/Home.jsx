@@ -1,22 +1,40 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import "./Home.css";
+
+// 1. MOVE CONSTANTS OUTSIDE THE COMPONENT
+// This stops React's linter from getting confused and asking for them in dependency arrays.
+const API_URL = "http://127.0.0.1:8000/api";
+const API_KEY = "AIzaSyAjcz_-ApKM7UoRE2-6SRaxkPXYMcK9S6I";
 
 function Home() {
   const [search, setSearch] = useState("");
   const [videos, setVideos] = useState([]);
-
-  const [bookmarks, setBookmarks] = useState(() => {
-    return JSON.parse(localStorage.getItem("bookmarks")) || [];
-  });
-
+  const [bookmarks, setBookmarks] = useState([]);
   const [collectionName, setCollectionName] = useState("");
 
   const [collections, setCollections] = useState(() => {
     return JSON.parse(localStorage.getItem("collections")) || [];
   });
 
-  const API_KEY = "AIzaSyAjcz_-ApKM7UoRE2-6SRaxkPXYMcK9S6I";
+  // 2. ONLY ONE fetchBookmarks function, safely wrapped in useCallback.
+  // Because API_URL is outside, this dependency array [] stays completely empty!
+  const fetchBookmarks = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/bookmarks/`);
+      setBookmarks(response.data);
+    } catch (error) {
+      console.log(error);
+    }
+  }, []); 
+
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchBookmarks();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchBookmarks]);
 
   const searchVideos = async () => {
     try {
@@ -28,20 +46,19 @@ function Home() {
             q: search,
             maxResults: 10,
             type: "video",
-            key: API_KEY,
+            key: API_KEY, // Uses the constant from outside
           },
         }
       );
-
       setVideos(response.data.items);
     } catch (error) {
       console.log(error);
     }
   };
 
-  const addBookmark = (video) => {
+  const addBookmark = async (video) => {
     const alreadyExists = bookmarks.find(
-      (item) => item.id.videoId === video.id.videoId
+      (item) => item.video_id === video.id.videoId
     );
 
     if (alreadyExists) {
@@ -49,29 +66,30 @@ function Home() {
       return;
     }
 
-    const updatedBookmarks = [...bookmarks, video];
+    try {
+      await axios.post(`${API_URL}/bookmarks/`, {
+        title: video.snippet.title,
+        video_id: video.id.videoId,
+        thumbnail: video.snippet.thumbnails.medium.url,
+        user_email: "test@gmail.com",
+      });
 
-    setBookmarks(updatedBookmarks);
-
-    localStorage.setItem(
-      "bookmarks",
-      JSON.stringify(updatedBookmarks)
-    );
-
-    alert("Bookmarked");
+      fetchBookmarks();
+      alert("Bookmark Saved");
+    } catch (error) {
+      console.log(error);
+    }
   };
 
-  const removeBookmark = (videoId) => {
-    const updatedBookmarks = bookmarks.filter(
-      (video) => video.id.videoId !== videoId
-    );
-
-    setBookmarks(updatedBookmarks);
-
-    localStorage.setItem(
-      "bookmarks",
-      JSON.stringify(updatedBookmarks)
-    );
+  const removeBookmark = async (id) => {
+    try {
+      await axios.delete(`${API_URL}/bookmarks/${id}/`);
+      fetchBookmarks(); 
+      alert("Bookmark Removed");
+    } catch (error) {
+      console.log(error);
+      alert("Error removing bookmark");
+    }
   };
 
   const clearBookmarks = () => {
@@ -91,18 +109,10 @@ function Home() {
       videos: [],
     };
 
-    const updatedCollections = [
-      ...collections,
-      newCollection,
-    ];
+    const updatedCollections = [...collections, newCollection];
 
     setCollections(updatedCollections);
-
-    localStorage.setItem(
-      "collections",
-      JSON.stringify(updatedCollections)
-    );
-
+    localStorage.setItem("collections", JSON.stringify(updatedCollections));
     setCollectionName("");
   };
 
@@ -112,24 +122,18 @@ function Home() {
     );
 
     setCollections(updatedCollections);
-
-    localStorage.setItem(
-      "collections",
-      JSON.stringify(updatedCollections)
-    );
+    localStorage.setItem("collections", JSON.stringify(updatedCollections));
   };
 
   const addToCollection = (collectionId, video) => {
-  const updatedCollections = collections.map(
-    (collection) => {
+    const updatedCollections = collections.map((collection) => {
       if (collection.id === collectionId) {
-
         const alreadyExists = collection.videos.find(
           (v) => v.id.videoId === video.id.videoId
         );
 
         if (alreadyExists) {
-          alert("Video already exists");
+          alert("Video already exists in collection");
           return collection;
         }
 
@@ -138,18 +142,12 @@ function Home() {
           videos: [...collection.videos, video],
         };
       }
-
       return collection;
-    }
-  );
+    });
 
-  setCollections(updatedCollections);
-
-  localStorage.setItem(
-    "collections",
-    JSON.stringify(updatedCollections)
-  );
-};
+    setCollections(updatedCollections);
+    localStorage.setItem("collections", JSON.stringify(updatedCollections));
+  };
 
   return (
     <div style={{ padding: "20px" }}>
@@ -167,13 +165,8 @@ function Home() {
         }}
       />
 
-      <button onClick={searchVideos}>
-        Search
-      </button>
-
-      <button onClick={() => setSearch("")}>
-        Clear
-      </button>
+      <button onClick={searchVideos}>Search</button>
+      <button onClick={() => setSearch("")}>Clear</button>
 
       <hr />
 
@@ -192,33 +185,22 @@ function Home() {
             src={video.snippet.thumbnails.medium.url}
             alt={video.snippet.title}
           />
-
           <h3>{video.snippet.title}</h3>
-
           <p>
-            <b>Channel:</b>{" "}
-            {video.snippet.channelTitle}
+            <b>Channel:</b> {video.snippet.channelTitle}
+          </p>
+          <p>
+            <b>Published:</b> {video.snippet.publishTime}
           </p>
 
-          <p>
-            <b>Published:</b>{" "}
-            {video.snippet.publishTime}
-          </p>
-
-          <button
-            onClick={() => addBookmark(video)}
-          >
-            Bookmark
-          </button>
+          <button onClick={() => addBookmark(video)}>Bookmark</button>
 
           <a
             href={`https://www.youtube.com/watch?v=${video.id.videoId}`}
             target="_blank"
             rel="noopener noreferrer"
           >
-            <button>
-              Watch Video
-            </button>
+            <button>Watch Video</button>
           </a>
         </div>
       ))}
@@ -231,20 +213,14 @@ function Home() {
         type="text"
         placeholder="Collection Name"
         value={collectionName}
-        onChange={(e) =>
-          setCollectionName(e.target.value)
-        }
+        onChange={(e) => setCollectionName(e.target.value)}
       />
 
-      <button onClick={createCollection}>
-        Create Collection
-      </button>
+      <button onClick={createCollection}>Create Collection</button>
 
       <h2>My Collections</h2>
 
-      <p>
-        Total Collections: {collections.length}
-      </p>
+      <p>Total Collections: {collections.length}</p>
 
       {collections.length === 0 ? (
         <p>No collections yet.</p>
@@ -259,29 +235,22 @@ function Home() {
             }}
           >
             <h3>{collection.name}</h3>
-
-            <p>
-              Videos: {collection.videos.length}
-            </p>
+            <p>Videos: {collection.videos.length}</p>
 
             {collection.videos.map((video) => (
-  <div
-    key={video.id.videoId}
-    style={{
-      border: "1px solid gray",
-      margin: "5px",
-      padding: "5px",
-    }}
-  >
-    <p>{video.snippet.title}</p>
-  </div>
-))}
+              <div
+                key={video.id.videoId}
+                style={{
+                  border: "1px solid gray",
+                  margin: "5px",
+                  padding: "5px",
+                }}
+              >
+                <p>{video.snippet.title}</p>
+              </div>
+            ))}
 
-            <button
-              onClick={() =>
-                deleteCollection(collection.id)
-              }
-            >
+            <button onClick={() => deleteCollection(collection.id)}>
               Delete Collection
             </button>
           </div>
@@ -290,63 +259,51 @@ function Home() {
 
       <hr />
 
-      <button onClick={clearBookmarks}>
-        Clear All Bookmarks
-      </button>
+      <button onClick={clearBookmarks}>Clear All Bookmarks</button>
 
       <h2>My Bookmarks</h2>
 
-      <p>
-        Total Bookmarks: {bookmarks.length}
-      </p>
+      <p>Total Bookmarks: {bookmarks.length}</p>
 
       {bookmarks.length === 0 ? (
         <p>No bookmarks yet.</p>
       ) : (
         bookmarks.map((video) => (
           <div
-            key={video.id.videoId}
+            key={video.id}
             style={{
               border: "1px solid green",
               margin: "10px",
               padding: "10px",
             }}
           >
-            <img
-              src={
-                video.snippet.thumbnails.medium.url
-              }
-              width="200"
-              alt=""
-            />
+            <img src={video.thumbnail} width="200" alt="" />
+            <h3>{video.title}</h3>
+            <p>{video.user_email}</p>
 
-            <h3>{video.snippet.title}</h3>
+            <button onClick={() => removeBookmark(video.id)}>Remove</button>
 
-            <p>
-              {video.snippet.channelTitle}
-            </p>
-
-            <button
-              onClick={() =>
-                removeBookmark(video.id.videoId)
-              }
-            >
-              Remove
-            </button>
-
-
-            <br />
-
-{collections.map((collection) => (
-  <button
-    key={collection.id}
-    onClick={() =>
-      addToCollection(collection.id, video)
-    }
-  >
-    Add to {collection.name}
-  </button>
-))}
+            {collections.length > 0 && (
+              <div style={{ marginTop: "15px", paddingTop: "10px", borderTop: "1px dashed #ccc" }}>
+                <p style={{ margin: "0 0 5px 0", fontSize: "14px" }}><b>Add to collection:</b></p>
+                {collections.map((collection) => (
+                  <button
+                    key={collection.id}
+                    style={{ marginRight: "5px", marginBottom: "5px" }}
+                    onClick={() => {
+                      const formattedVideoForCollection = {
+                        id: { videoId: video.video_id },
+                        snippet: { title: video.title }
+                      };
+                      addToCollection(collection.id, formattedVideoForCollection);
+                      alert(`Added to ${collection.name}`);
+                    }}
+                  >
+                    + {collection.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))
       )}
